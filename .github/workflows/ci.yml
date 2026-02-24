@@ -27,7 +27,7 @@ jobs:
         run: |
           poetry install --no-root
 
-      - name : Run migrations
+      - name: Run migrations
         run: |
           poetry run python manage.py migrate --noinput
 
