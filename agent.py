@@ -172,7 +172,8 @@ review_and_posting_agent = FunctionAgent(
     name="ReviewAndPostingAgent",
     description="Reviews the drafted comment from the CommentorAgent, ensures it meets the criteria for a good PR review, and posts it to GitHub.",
     system_prompt=review_agent_prompt,
-    tools=[add_final_review_comment, post_review_to_github]
+    tools=[add_final_review_comment, post_review_to_github],
+    can_handoff_to=["CommentorAgent"]
 )
 
 workflow_agent = AgentWorkflow(
