@@ -90,6 +90,9 @@ def post_review_to_github(review_comment: str):
     pull_request.create_review(body=review_comment, event="COMMENT")
 
 
+print(f"OpenAI model being used: {os.getenv('OPENAI_MODEL', 'gpt-4')}")
+print(f"OpenAI API base URL: {os.getenv('OPENAI_BASE_URL')}")
+
 llm = OpenAI(
     model=os.getenv("OPENAI_MODEL", "gpt-4"),
     api_key=os.getenv("OPENAI_API_KEY"),
