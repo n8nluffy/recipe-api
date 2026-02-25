@@ -3,7 +3,7 @@ import os
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
-from github import Github
+from github import Github, Auth
 from llama_index.core.agent.workflow import AgentOutput, ToolCall, ToolCallResult, FunctionAgent, AgentWorkflow
 from llama_index.core.prompts import RichPromptTemplate
 from llama_index.core.workflow import Context
@@ -12,9 +12,10 @@ from llama_index.llms.openai import OpenAI
 load_dotenv()
 
 repo_url = os.getenv("REPOSITORY")
-git = Github(os.getenv("GITHUB_TOKEN")) if os.getenv("GITHUB_TOKEN") else None
-repo_path = repo_url.replace("https://github.com/", "").replace(".git", "")
-pr_number = int(os.getenv("PR_NUMBER"))
+github_token = os.getenv("GITHUB_TOKEN")
+git = Github(auth=Auth.Token(github_token)) if github_token else None
+repo_path = repo_url.replace("https://github.com/", "").replace(".git", "") if repo_url else ""
+pr_number = int(os.getenv("PR_NUMBER")) if os.getenv("PR_NUMBER") else 0
 
 
 def get_pr_details() -> Dict[str, Any]:
@@ -91,7 +92,7 @@ def post_review_to_github(review_comment: str):
 
 
 llm = OpenAI(
-    model=os.getenv("OPENAI_MODEL"),
+    model=os.getenv("OPENAI_MODEL", "gpt-4"),
     api_key=os.getenv("OPENAI_API_KEY"),
     api_base=os.getenv("OPENAI_BASE_URL"),
 )
@@ -189,4 +190,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    git.close()
+    if git:
+        git.close()
