@@ -6,6 +6,7 @@ class Recipe(models.Model):
     description = models.TextField(blank=True)
     time_minutes = models.IntegerField()
     price = models.DecimalField(max_digits=5, decimal_places=2)
+    servings = models.IntegerField(default=4)
 
     def __str__(self):
         return self.title
