@@ -55,7 +55,7 @@ def get_pr_commit_details(head_sha: str) -> List[Dict[str, Any]]:
     """
     This function takes a commit SHA as input and returns the details of the commit including the changed files, additions, deletions, and the patch.
     :param head_sha:
-    :return: Dictionary containing the commit details
+    :return: List of dictionaries containing the commit details for each changed file
     """
     repo = git.get_repo(repo_path)
     commit = repo.get_commit(head_sha)
