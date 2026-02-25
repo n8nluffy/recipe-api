@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from dotenv import load_dotenv
 from github import Github, Auth
 from llama_index.core.agent.workflow import AgentOutput, ToolCall, ToolCallResult, FunctionAgent, AgentWorkflow
+from llama_index.core.tools import FunctionTool
 from llama_index.core.prompts import RichPromptTemplate
 from llama_index.core.workflow import Context
 from llama_index.llms.openai import OpenAI
@@ -73,22 +74,46 @@ def get_pr_commit_details(head_sha: str) -> List[Dict[str, Any]]:
 
 
 async def add_comment_to_state(ctx: Context, draft_comment: str):
+    """
+    This function takes the drafted comment as input and adds it to the state.
+    :param ctx: Context object that holds the state
+    :param draft_comment: The drafted review comment to be added to the state
+    :return: None
+    """
     current_state = await ctx.store.get("state")
     current_state["draft_comment"] = draft_comment
     await ctx.store.set("state", current_state)
 
 
 async def add_final_review_comment(ctx: Context, final_review_comment: str):
+    """
+    This function takes the final review comment as input and adds it to the state.
+    :param ctx: Context object that holds the state
+    :param final_review_comment: The final review comment to be added to the state
+    :return: None
+    """
     current_state = await ctx.store.get("state")
     current_state["final_review_comment"] = final_review_comment
     await ctx.store.set("state", current_state)
 
 
 def post_review_to_github(review_comment: str):
+    """
+    This function takes the review comment as input and posts it to GitHub as a review on the specified PR.
+    :param review_comment: The review comment to be posted on GitHub
+    :return: None
+    """
     repo = git.get_repo(repo_path)
     pull_request = repo.get_pull(number=pr_number)
     pull_request.create_review(body=review_comment, event="COMMENT")
 
+
+get_commit_details_tool = FunctionTool.from_defaults(get_pr_commit_details)
+get_file_content_tool = FunctionTool.from_defaults(get_file_content)
+get_pr_details_tool = FunctionTool.from_defaults(get_pr_details)
+add_comment_to_state_tool = FunctionTool.from_defaults(add_comment_to_state)
+add_final_review_comment_tool = FunctionTool.from_defaults(add_final_review_comment)
+post_review_to_github_tool = FunctionTool.from_defaults(post_review_to_github)
 
 print(f"OpenAI model being used: {os.getenv('OPENAI_MODEL', 'gpt-4')}")
 print(f"OpenAI API base URL: {os.getenv('OPENAI_BASE_URL')}")
@@ -108,7 +133,7 @@ context_agent = FunctionAgent(
     llm=llm,
     name="ContextAgent",
     description="Gathers all the needed context for the commentor agent to write a thorough review comment.",
-    tools=[get_pr_commit_details, get_file_content, get_pr_details, add_comment_to_state],
+    tools=[get_commit_details_tool, get_file_content_tool, get_pr_details_tool, add_comment_to_state_tool],
     system_prompt=sys_prompt,
     can_handoff_to=["CommentorAgent"]
 )
@@ -134,7 +159,7 @@ commentor_agent = FunctionAgent(
     description="Uses the context gathered by the context agent to draft a pull review comment comment.",
     llm=llm,
     system_prompt=commentor_prompt,
-    tools=[add_comment_to_state],
+    tools=[add_comment_to_state_tool],
     can_handoff_to=["ContextAgent", "ReviewAndPostingAgent"]
 )
 
@@ -155,7 +180,7 @@ review_and_posting_agent = FunctionAgent(
     name="ReviewAndPostingAgent",
     description="Reviews the drafted comment from the CommentorAgent, ensures it meets the criteria for a good PR review, and posts it to GitHub.",
     system_prompt=review_agent_prompt,
-    tools=[add_final_review_comment, post_review_to_github]
+    tools=[add_final_review_comment_tool, post_review_to_github_tool]
 )
 
 workflow_agent = AgentWorkflow(
