@@ -54,7 +54,9 @@ jobs:
       - name: Add Copilot as assignee
         continue-on-error: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GH_PAT must be a fine-grained PAT with Read & Write on:
+          # Actions, Contents, Issues, Pull requests
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
           BRANCH_NAME: ${{ steps.create_branch.outputs.branch_name }}
