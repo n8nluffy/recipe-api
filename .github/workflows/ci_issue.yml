@@ -1,93 +1,123 @@
-name: Auto-assign Issues to GitHub Copilot
+name: Issue Management
 
 on:
   issues:
-    types: [ opened ]
+    types: [opened]
 
 jobs:
-  assign-issue:
+  manage-issue:
     runs-on: ubuntu-latest
     permissions:
-      issues: write
-      contents: write
-      pull-requests: write
+      contents: write       # needed to create branches
+      issues: write         # needed to assign and label issues
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
+      # ── 1. Create a branch for the issue ─────────────────────────────────
       - name: Create branch for issue
-        id: create-branch
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issueNumber = context.issue.number;
-            const branchName = `copilot/issue-${issueNumber}`;
-            
-            // Get the default branch SHA
-            const { data: ref } = await github.rest.git.getRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: 'heads/main'
-            });
-            
-            // Create new branch from main
-            try {
-              await github.rest.git.createRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `refs/heads/${branchName}`,
-                sha: ref.object.sha
-              });
-              console.log(`✅ Created branch: ${branchName}`);
-            } catch (error) {
-              if (error.status === 422) {
-                console.log(`⚠️ Branch ${branchName} already exists`);
-              } else {
-                throw error;
-              }
-            }
-            
-            // Set output for next steps
-            core.setOutput('branch_name', branchName);
-            core.setOutput('issue_number', issueNumber);
-            
-            return branchName;
+        id: create_branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_ID: ${{ github.event.issue.number }}
+        run: |
+          BRANCH_NAME="workflow/issue-${ISSUE_ID}"
+          echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Add labels to issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issueNumber = ${{ steps.create-branch.outputs.issue_number }};
-            const branchName = '${{ steps.create-branch.outputs.branch_name }}';
-            
-            // Add labels to trigger GitHub Copilot
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              labels: ['copilot-workspace', 'copilot']
-            });
+          # Check whether the branch already exists on the remote
+          if git ls-remote --exit-code --heads origin "${BRANCH_NAME}" > /dev/null 2>&1; then
+            echo "Branch ${BRANCH_NAME} already exists – skipping creation."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git checkout -b "${BRANCH_NAME}"
+            git push origin "${BRANCH_NAME}"
+            echo "Branch ${BRANCH_NAME} created successfully."
+          fi
 
-      - name: Comment on issue with branch details
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const branchName = '${{ steps.create-branch.outputs.branch_name }}';
-            const issueNumber = ${{ steps.create-branch.outputs.issue_number }};
-            
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              body: `🤖 **Branch Created Successfully!**\n\n` +
-                    `- **Branch Name:** \`${branchName}\`\n` +
-                    `- **Base Branch:** \`main\`\n\n` +
-                    `GitHub Copilot will work on this branch to resolve the issue.\n\n` +
-                    `**Labels Added:**\n` +
-                    `- \`copilot-workspace\`: Indicates this is a Copilot workspace\n` +
-                    `- \`copilot\`: Triggers GitHub Copilot to work on this issue\n\n` +
-                    `To have GitHub Copilot work on this issue, mention @copilot in a comment with your instructions.`
-            });
+      # ── 2. Assign the issue to the user who opened it ────────────────────
+      - name: Assign issue to creator
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          CREATOR: ${{ github.event.issue.user.login }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh issue edit "${ISSUE_NUMBER}" \
+            --repo "${REPO}" \
+            --add-assignee "${CREATOR}"
+
+      # ── 3. Add GitHub Copilot as an additional assignee ──────────────────
+      - name: Add Copilot as assignee
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # "copilot-swe-agent" is the Copilot coding-agent bot login.
+          # Change this value if your organisation uses a different handle.
+          gh issue edit "${ISSUE_NUMBER}" \
+            --repo "${REPO}" \
+            --add-assignee "copilot-swe-agent" \
+          || echo "Could not add copilot-swe-agent – skipping (account may not exist in this org)."
+
+      # ── 4. Create labels (if absent) and apply them to the issue ─────────
+      - name: Ensure required labels exist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH_NAME: ${{ steps.create_branch.outputs.branch_name }}
+          CREATOR: ${{ github.event.issue.user.login }}
+        run: |
+          create_label_if_missing() {
+            local label="$1"
+            local color="$2"
+            local description="$3"
+            if ! gh label list --repo "${REPO}" --json name -q '.[].name' | grep -qxF "${label}"; then
+              gh label create "${label}" \
+                --repo "${REPO}" \
+                --color "${color}" \
+                --description "${description}"
+            fi
+          }
+
+          create_label_if_missing "branch:${BRANCH_NAME}"   "0075ca" "Linked branch for this issue"
+          create_label_if_missing "assignee:${CREATOR}"     "e4e669" "Issue created by ${CREATOR}"
+          create_label_if_missing "assignee:copilot"        "d93f0b" "Assigned to GitHub Copilot agent"
+
+      - name: Label issue with branch and assignee info
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          BRANCH_NAME: ${{ steps.create_branch.outputs.branch_name }}
+          CREATOR: ${{ github.event.issue.user.login }}
+        run: |
+          gh issue edit "${ISSUE_NUMBER}" \
+            --repo "${REPO}" \
+            --add-label "branch:${BRANCH_NAME},assignee:${CREATOR},assignee:copilot"
+
+      # ── 5. Post a summary comment on the issue ───────────────────────────
+      - name: Post summary comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          BRANCH_NAME: ${{ steps.create_branch.outputs.branch_name }}
+          CREATOR: ${{ github.event.issue.user.login }}
+        run: |
+          gh issue comment "${ISSUE_NUMBER}" \
+            --repo "${REPO}" \
+            --body "$(cat <<EOF
+          ### 🤖 Issue automation summary
+
+          | Item | Value |
+          |------|-------|
+          | **Branch created** | \`${BRANCH_NAME}\` |
+          | **Assigned to (creator)** | @${CREATOR} |
+          | **Assigned to (Copilot)** | @copilot-swe-agent |
+          | **Labels applied** | \`branch:${BRANCH_NAME}\` · \`assignee:${CREATOR}\` · \`assignee:copilot\` |
+          EOF
+          )"
+
