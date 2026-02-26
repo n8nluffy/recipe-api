@@ -55,12 +55,12 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
         run: |
-          # "copilot-swe-agent" is the Copilot coding-agent bot login.
+          # "copilot-swe-agent[bot]" is the Copilot coding-agent bot login.
           # Change this value if your organisation uses a different handle.
           gh issue edit "${ISSUE_NUMBER}" \
             --repo "${REPO}" \
-            --add-assignee "copilot-swe-agent" \
-          || echo "Could not add copilot-swe-agent – skipping (account may not exist in this org)."
+            --add-assignee "copilot-swe-agent[bot]" \
+          || echo "Could not add copilot-swe-agent[bot] – skipping (account may not exist in this org)."
 
       # ── 4. Create labels (if absent) and apply them to the issue ─────────
       - name: Ensure required labels exist
@@ -116,7 +116,7 @@ jobs:
           |------|-------|
           | **Branch created** | \`${BRANCH_NAME}\` |
           | **Assigned to (creator)** | @${CREATOR} |
-          | **Assigned to (Copilot)** | @copilot-swe-agent |
+          | **Assigned to (Copilot)** | @copilot-swe-agent[bot] |
           | **Labels applied** | \`branch:${BRANCH_NAME}\` · \`assignee:${CREATOR}\` · \`assignee:copilot\` |
           EOF
           )"
